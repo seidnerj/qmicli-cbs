@@ -1,0 +1,110 @@
+From 83cdf8fc76ceb173373b53b9ec347a067569a6a1 Mon Sep 17 00:00:00 2001
+From: seidnerj <jonathan.seidner@gmail.com>
+Date: Mon, 9 Mar 2026 06:45:22 +0200
+Subject: [PATCH 2/4] qmicli,wms: add set-event-report command
+
+Add --wms-set-event-report to enable the New MT Message Indicator via
+QMI_WMS_SET_EVENT_REPORT. This is needed to receive WMS indications
+for incoming messages, including Cell Broadcast (CBS), ETWS and CMAS
+alerts.
+---
+ src/qmicli/qmicli-wms.c | 55 +++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 55 insertions(+)
+
+diff --git a/src/qmicli/qmicli-wms.c b/src/qmicli/qmicli-wms.c
+index cf2f715..770aa3b 100644
+--- a/src/qmicli/qmicli-wms.c
++++ b/src/qmicli/qmicli-wms.c
+@@ -53,6 +53,7 @@ static gboolean reset_flag;
+ static gboolean noop_flag;
+ static gchar *set_broadcast_config_str;
+ static gboolean get_broadcast_config_flag;
++static gboolean set_event_report_flag;
+ 
+ static GOptionEntry entries[] = {
+ #if defined HAVE_QMI_MESSAGE_WMS_GET_SUPPORTED_MESSAGES
+@@ -85,6 +86,12 @@ static GOptionEntry entries[] = {
+       NULL,
+     },
+ #endif
++#if defined HAVE_QMI_MESSAGE_WMS_SET_EVENT_REPORT
++    { "wms-set-event-report", 0, 0, G_OPTION_ARG_NONE, &set_event_report_flag,
++      "Enable New MT Message event reporting",
++      NULL
++    },
++#endif
+ #if defined HAVE_QMI_MESSAGE_WMS_RESET
+     { "wms-reset", 0, 0, G_OPTION_ARG_NONE, &reset_flag,
+       "Reset the service state",
+@@ -127,6 +134,7 @@ qmicli_wms_options_enabled (void)
+                  !!set_routes_str +
+                  !!set_broadcast_config_str +
+                  get_broadcast_config_flag +
++                 set_event_report_flag +
+                  reset_flag +
+                  noop_flag);
+ 
+@@ -582,6 +590,36 @@ get_broadcast_config_ready (QmiClientWms *client,
+ 
+ #endif
+ 
++#if defined HAVE_QMI_MESSAGE_WMS_SET_EVENT_REPORT
++
++static void
++set_event_report_ready (QmiClientWms *client,
++                        GAsyncResult *res)
++{
++    g_autoptr(QmiMessageWmsSetEventReportOutput) output = NULL;
++    g_autoptr(GError) error = NULL;
++
++    output = qmi_client_wms_set_event_report_finish (client, res, &error);
++    if (!output) {
++        g_printerr ("error: operation failed: %s\n", error->message);
++        operation_shutdown (FALSE);
++        return;
++    }
++
++    if (!qmi_message_wms_set_event_report_output_get_result (output, &error)) {
++        g_printerr ("error: couldn't set WMS event report: %s\n", error->message);
++        operation_shutdown (FALSE);
++        return;
++    }
++
++    g_print ("[%s] Successfully enabled WMS event reporting\n",
++             qmi_device_get_path_display (ctx->device));
++
++    operation_shutdown (TRUE);
++}
++
++#endif /* HAVE_QMI_MESSAGE_WMS_SET_EVENT_REPORT */
++
+ #if defined HAVE_QMI_MESSAGE_WMS_RESET
+ 
+ static void
+@@ -729,6 +767,23 @@ qmicli_wms_run (QmiDevice *device,
+     }
+ #endif
+ 
++#if defined HAVE_QMI_MESSAGE_WMS_SET_EVENT_REPORT
++    if (set_event_report_flag) {
++        g_autoptr(QmiMessageWmsSetEventReportInput) input = NULL;
++
++        g_debug ("Asynchronously enabling WMS event reporting...");
++        input = qmi_message_wms_set_event_report_input_new ();
++        qmi_message_wms_set_event_report_input_set_new_mt_message_indicator (input, TRUE, NULL);
++        qmi_client_wms_set_event_report (ctx->client,
++                                         input,
++                                         10,
++                                         ctx->cancellable,
++                                         (GAsyncReadyCallback)set_event_report_ready,
++                                         NULL);
++        return;
++    }
++#endif
++
+ #if defined HAVE_QMI_MESSAGE_WMS_RESET
+     if (reset_flag) {
+         g_debug ("Asynchronously resetting WMS service...");
+-- 
+2.53.0
+

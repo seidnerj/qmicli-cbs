@@ -1,0 +1,115 @@
+From f8226124de392328187d245a1b1fce4597ad926d Mon Sep 17 00:00:00 2001
+From: seidnerj <jonathan.seidner@gmail.com>
+Date: Mon, 9 Mar 2026 06:46:14 +0200
+Subject: [PATCH 3/4] qmicli,wms: add set-broadcast-activation command
+
+Add --wms-set-broadcast-activation to activate Cell Broadcast message
+reception on the modem via QMI_WMS_SET_BROADCAST_ACTIVATION for
+GSM/WCDMA mode. This complements the existing --wms-set-cbs-channels
+command which configures which channel IDs to receive, but does not
+activate the broadcast subsystem itself.
+---
+ src/qmicli/qmicli-wms.c | 59 +++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 59 insertions(+)
+
+diff --git a/src/qmicli/qmicli-wms.c b/src/qmicli/qmicli-wms.c
+index 770aa3b..e1816e2 100644
+--- a/src/qmicli/qmicli-wms.c
++++ b/src/qmicli/qmicli-wms.c
+@@ -54,6 +54,7 @@ static gboolean noop_flag;
+ static gchar *set_broadcast_config_str;
+ static gboolean get_broadcast_config_flag;
+ static gboolean set_event_report_flag;
++static gboolean set_broadcast_activation_flag;
+ 
+ static GOptionEntry entries[] = {
+ #if defined HAVE_QMI_MESSAGE_WMS_GET_SUPPORTED_MESSAGES
+@@ -92,6 +93,12 @@ static GOptionEntry entries[] = {
+       NULL
+     },
+ #endif
++#if defined HAVE_QMI_MESSAGE_WMS_SET_BROADCAST_ACTIVATION
++    { "wms-set-broadcast-activation", 0, 0, G_OPTION_ARG_NONE, &set_broadcast_activation_flag,
++      "Activate Cell Broadcast message reception on the modem",
++      NULL
++    },
++#endif
+ #if defined HAVE_QMI_MESSAGE_WMS_RESET
+     { "wms-reset", 0, 0, G_OPTION_ARG_NONE, &reset_flag,
+       "Reset the service state",
+@@ -135,6 +142,7 @@ qmicli_wms_options_enabled (void)
+                  !!set_broadcast_config_str +
+                  get_broadcast_config_flag +
+                  set_event_report_flag +
++                 set_broadcast_activation_flag +
+                  reset_flag +
+                  noop_flag);
+ 
+@@ -620,6 +628,36 @@ set_event_report_ready (QmiClientWms *client,
+ 
+ #endif /* HAVE_QMI_MESSAGE_WMS_SET_EVENT_REPORT */
+ 
++#if defined HAVE_QMI_MESSAGE_WMS_SET_BROADCAST_ACTIVATION
++
++static void
++set_broadcast_activation_ready (QmiClientWms *client,
++                                GAsyncResult *res)
++{
++    g_autoptr(QmiMessageWmsSetBroadcastActivationOutput) output = NULL;
++    g_autoptr(GError) error = NULL;
++
++    output = qmi_client_wms_set_broadcast_activation_finish (client, res, &error);
++    if (!output) {
++        g_printerr ("error: operation failed: %s\n", error->message);
++        operation_shutdown (FALSE);
++        return;
++    }
++
++    if (!qmi_message_wms_set_broadcast_activation_output_get_result (output, &error)) {
++        g_printerr ("error: couldn't activate broadcast: %s\n", error->message);
++        operation_shutdown (FALSE);
++        return;
++    }
++
++    g_print ("[%s] Successfully activated Cell Broadcast reception\n",
++             qmi_device_get_path_display (ctx->device));
++
++    operation_shutdown (TRUE);
++}
++
++#endif /* HAVE_QMI_MESSAGE_WMS_SET_BROADCAST_ACTIVATION */
++
+ #if defined HAVE_QMI_MESSAGE_WMS_RESET
+ 
+ static void
+@@ -784,6 +822,27 @@ qmicli_wms_run (QmiDevice *device,
+     }
+ #endif
+ 
++#if defined HAVE_QMI_MESSAGE_WMS_SET_BROADCAST_ACTIVATION
++    if (set_broadcast_activation_flag) {
++        g_autoptr(QmiMessageWmsSetBroadcastActivationInput) input = NULL;
++
++        g_debug ("Asynchronously activating broadcast...");
++        input = qmi_message_wms_set_broadcast_activation_input_new ();
++        qmi_message_wms_set_broadcast_activation_input_set_activation (
++            input,
++            QMI_WMS_MESSAGE_MODE_GSM_WCDMA,
++            TRUE,
++            NULL);
++        qmi_client_wms_set_broadcast_activation (ctx->client,
++                                                 input,
++                                                 10,
++                                                 ctx->cancellable,
++                                                 (GAsyncReadyCallback)set_broadcast_activation_ready,
++                                                 NULL);
++        return;
++    }
++#endif
++
+ #if defined HAVE_QMI_MESSAGE_WMS_RESET
+     if (reset_flag) {
+         g_debug ("Asynchronously resetting WMS service...");
+-- 
+2.53.0
+
