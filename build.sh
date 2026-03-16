@@ -67,9 +67,13 @@ if [ "$(uname)" = "Darwin" ] && command -v meson >/dev/null 2>&1 && pkg-config -
         cd "${NATIVE_BUILD_DIR}/libqmi"
         git -c user.name="qmicli-cbs" -c user.email="build@qmicli-cbs" am "${SCRIPT_DIR}"/patches/*.patch
 
+        # Remove swi-update from utils build (requires linux/types.h, malloc.h - deeply Linux-specific)
+        sed -i '' '/^executable(/,/^)/d' utils/meson.build
+
         meson setup builddir \
             --prefix="${NATIVE_BUILD_DIR}/install" \
             --buildtype=minsize \
+            '-Dc_args=["-I'"${SCRIPT_DIR}"'/compat", "-Ds6_addr16=__u6_addr.__u6_addr16"]' \
             -Dman=false \
             -Dgtk_doc=false \
             -Dintrospection=false \
