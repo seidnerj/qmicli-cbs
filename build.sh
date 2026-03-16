@@ -61,13 +61,86 @@ DOCKER_PID=$!
 echo "Started Docker cross-compilation (PID $DOCKER_PID)"
 
 # --- Native macOS build (parallel with Docker) ---
-# macOS native build always uses shared linking (uses homebrew system libs).
-# Static is not practical on macOS without building all deps from source.
-if [ "$(uname)" = "Darwin" ] && command -v meson >/dev/null 2>&1 && pkg-config --exists glib-2.0 2>/dev/null; then
+# Builds all deps (zlib, libffi, PCRE2, GLib) from source with static linking,
+# then builds libqmi against them. Produces a self-contained binary.
+if [ "$(uname)" = "Darwin" ] && command -v meson >/dev/null 2>&1 && command -v ninja >/dev/null 2>&1; then
     (
-        echo "[native] Building qmicli natively for macOS (shared)..."
+        echo "[native] Building qmicli natively for macOS (static)..."
 
         NATIVE_BUILD_DIR=$(mktemp -d)
+        SYSROOT="${NATIVE_BUILD_DIR}/sysroot"
+        INSTALL_DIR="${NATIVE_BUILD_DIR}/install"
+        NJOBS=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+        mkdir -p "${SYSROOT}/lib/pkgconfig" "${SYSROOT}/include"
+
+        # Dependency versions
+        # GLib 2.82+ drops the distutils dependency that breaks on Python 3.12+
+        ZLIB_VERSION=1.3.1
+        LIBFFI_VERSION=3.4.7
+        PCRE2_VERSION=10.43
+        GLIB_VERSION=2.82.5
+        GLIB_MAJOR_MINOR=2.82
+
+        # --- Build zlib ---
+        echo "[native] Building zlib..."
+        WORK=$(mktemp -d)
+        curl -sSL "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz" | tar xz -C "$WORK"
+        cd "$WORK"/zlib-*
+        CFLAGS="-Os" ./configure --prefix="${SYSROOT}" --static
+        make -j${NJOBS}
+        make install
+        cd /tmp && rm -rf "$WORK"
+
+        # --- Build libffi ---
+        echo "[native] Building libffi..."
+        WORK=$(mktemp -d)
+        curl -sSL "https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION}/libffi-${LIBFFI_VERSION}.tar.gz" | tar xz -C "$WORK"
+        cd "$WORK"/libffi-*
+        ./configure --prefix="${SYSROOT}" --enable-static --disable-shared --disable-docs CFLAGS="-Os"
+        make -j${NJOBS}
+        make install
+        cd /tmp && rm -rf "$WORK"
+
+        # --- Build PCRE2 ---
+        echo "[native] Building PCRE2..."
+        WORK=$(mktemp -d)
+        curl -sSL "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-${PCRE2_VERSION}/pcre2-${PCRE2_VERSION}.tar.gz" | tar xz -C "$WORK"
+        cd "$WORK"/pcre2-*
+        ./configure --prefix="${SYSROOT}" --enable-static --disable-shared --disable-jit CFLAGS="-Os"
+        make -j${NJOBS}
+        make install
+        cd /tmp && rm -rf "$WORK"
+
+        # --- Build GLib ---
+        echo "[native] Building GLib..."
+        WORK=$(mktemp -d)
+        curl -sSL "https://download.gnome.org/sources/glib/${GLIB_MAJOR_MINOR}/glib-${GLIB_VERSION}.tar.xz" | tar xJ -C "$WORK"
+        cd "$WORK"/glib-*
+
+        # Tell meson/pkg-config where to find our static deps
+        export PKG_CONFIG_PATH="${SYSROOT}/lib/pkgconfig:${SYSROOT}/share/pkgconfig"
+
+        meson setup builddir \
+            --prefix="${SYSROOT}" \
+            --default-library=static \
+            --buildtype=minsize \
+            -Dtests=false \
+            -Dglib_debug=disabled \
+            -Dnls=disabled \
+            -Dlibmount=disabled \
+            -Ddtrace=false \
+            -Dsystemtap=false \
+            -Dselinux=disabled \
+            -Dxattr=false \
+            -Dlibelf=disabled \
+            -Dglib_checks=false \
+            -Dglib_assert=false
+        ninja -C builddir -j${NJOBS} install
+        cd /tmp && rm -rf "$WORK"
+
+        # --- Build libqmi ---
+        echo "[native] Building libqmi..."
 
         # Clone libqmi at pinned commit if not cached
         if [ ! -d "${SCRIPT_DIR}/.libqmi-src" ]; then
@@ -85,7 +158,8 @@ if [ "$(uname)" = "Darwin" ] && command -v meson >/dev/null 2>&1 && pkg-config -
         sed -i '' '/^executable(/,/^)/d' utils/meson.build
 
         meson setup builddir \
-            --prefix="${NATIVE_BUILD_DIR}/install" \
+            --prefix="${INSTALL_DIR}" \
+            --default-library=static \
             --buildtype=minsize \
             '-Dc_args=["-I'"${SCRIPT_DIR}"'/compat", "-Ds6_addr16=__u6_addr.__u6_addr16"]' \
             -Dman=false \
@@ -99,23 +173,23 @@ if [ "$(uname)" = "Darwin" ] && command -v meson >/dev/null 2>&1 && pkg-config -
             -Dfirmware_update=false \
             -Dmm_runtime_check=false \
             -Dcollection=full
-        ninja -C builddir -j$(sysctl -n hw.ncpu 2>/dev/null || nproc)
+        ninja -C builddir -j${NJOBS}
         ninja -C builddir install
 
-        cp "${NATIVE_BUILD_DIR}/install/bin/qmicli" "${OUTPUT_DIR}/qmicli-darwin"
-        if [ -f "${NATIVE_BUILD_DIR}/install/libexec/qmi-proxy" ]; then
-            cp "${NATIVE_BUILD_DIR}/install/libexec/qmi-proxy" "${OUTPUT_DIR}/qmi-proxy-darwin"
+        cp "${INSTALL_DIR}/bin/qmicli" "${OUTPUT_DIR}/qmicli-darwin"
+        if [ -f "${INSTALL_DIR}/libexec/qmi-proxy" ]; then
+            cp "${INSTALL_DIR}/libexec/qmi-proxy" "${OUTPUT_DIR}/qmi-proxy-darwin"
         fi
 
         rm -rf "${NATIVE_BUILD_DIR}"
 
-        echo "[native] Done: macOS (shared)"
+        echo "[native] Done: macOS (static)"
         file "${OUTPUT_DIR}/qmicli-darwin"
     ) > "${NATIVE_LOG}" 2>&1 &
     NATIVE_PID=$!
     echo "Started macOS native build (PID $NATIVE_PID)"
 else
-    echo "Skipping macOS native build (not on macOS or missing deps: brew install glib meson ninja)"
+    echo "Skipping macOS native build (not on macOS or missing deps: brew install meson ninja)"
 fi
 
 # --- Wait for all builds ---
