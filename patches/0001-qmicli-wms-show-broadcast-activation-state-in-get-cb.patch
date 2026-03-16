@@ -1,5 +1,5 @@
 From ff3b61e08c244cffac729fc2199016161d9e7bf7 Mon Sep 17 00:00:00 2001
-From: seidnerj <jonathan.seidner@gmail.com>
+From: seidnerj <4147381+seidnerj@users.noreply.github.com>
 Date: Mon, 9 Mar 2026 06:34:40 +0200
 Subject: [PATCH 1/4] qmicli,wms: show broadcast activation state in
  get-cbs-channels output
@@ -8,6 +8,9 @@ The get-broadcast-config response includes an activation state field
 that was previously not displayed. Show it as a separate line so users
 can verify whether Cell Broadcast reception is currently active on
 the modem.
+
+Based on libqmi commit d125e7a5 from
+https://gitlab.freedesktop.org/mobile-broadband/libqmi
 ---
  src/qmicli/qmicli-wms.c | 5 ++++-
  1 file changed, 4 insertions(+), 1 deletion(-)

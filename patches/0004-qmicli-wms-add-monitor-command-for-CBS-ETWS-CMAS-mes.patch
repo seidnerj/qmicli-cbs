@@ -1,5 +1,5 @@
 From 70b7a4a687af0451fabef1cb9ab96872854f7b19 Mon Sep 17 00:00:00 2001
-From: seidnerj <jonathan.seidner@gmail.com>
+From: seidnerj <4147381+seidnerj@users.noreply.github.com>
 Date: Mon, 9 Mar 2026 06:49:05 +0200
 Subject: [PATCH 4/4] qmicli,wms: add monitor command for CBS/ETWS/CMAS
  messages
@@ -22,6 +22,9 @@ Ctrl+C. For each received indication it prints:
 
 The monitoring pattern follows the same approach used by
 --uim-monitor-slot-status in qmicli-uim.c.
+
+Based on libqmi commit d125e7a5 from
+https://gitlab.freedesktop.org/mobile-broadband/libqmi
 ---
  src/qmicli/qmicli-wms.c | 218 +++++++++++++++++++++++++++++++++++++++-
  1 file changed, 217 insertions(+), 1 deletion(-)

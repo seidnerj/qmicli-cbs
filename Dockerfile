@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim AS builder
+FROM debian:bookworm-slim AS base
 
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -25,20 +25,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install meson via pip (need recent version for cross-compilation)
 RUN python3 -m pip install --break-system-packages meson
 
-# Download and install musl cross-compiler for MIPS big-endian soft-float
-# Using musl.cc prebuilt toolchains
-ARG MUSL_CROSS_URL=https://musl.cc/mips-linux-muslsf-cross.tgz
-RUN curl -sSL "$MUSL_CROSS_URL" | tar xz -C /opt
-ENV PATH="/opt/mips-linux-muslsf-cross/bin:${PATH}"
-ENV CROSS_PREFIX=mips-linux-muslsf
-
-# Verify the toolchain works
-RUN ${CROSS_PREFIX}-gcc --version && \
-    echo "int main(){return 0;}" > /tmp/test.c && \
-    ${CROSS_PREFIX}-gcc -static -o /tmp/test /tmp/test.c && \
-    file /tmp/test && \
-    rm /tmp/test.c /tmp/test
-
 WORKDIR /build
 
 # Versions
@@ -46,10 +32,160 @@ ARG ZLIB_VERSION=1.3.1
 ARG LIBFFI_VERSION=3.4.6
 ARG PCRE2_VERSION=10.43
 ARG GLIB_VERSION=2.78.6
-ARG LIBQMI_VERSION=main
 
-# Create meson cross-compilation file
-RUN cat > /build/mips-linux-musl.cross <<'CROSSEOF'
+# Download all source tarballs once (shared across targets)
+RUN curl -sSL "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz" -o /build/zlib.tar.gz && \
+    curl -sSL "https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION}/libffi-${LIBFFI_VERSION}.tar.gz" -o /build/libffi.tar.gz && \
+    curl -sSL "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-${PCRE2_VERSION}/pcre2-${PCRE2_VERSION}.tar.gz" -o /build/pcre2.tar.gz && \
+    curl -sSL "https://download.gnome.org/sources/glib/2.78/glib-${GLIB_VERSION}.tar.xz" -o /build/glib.tar.xz
+
+# Clone libqmi at the pinned commit our patches are based on
+# Pinned to the commit our patches are based on (qmicli: wds: Allow to get CBS channels)
+# Patches also apply cleanly on current main, but pinning ensures reproducible builds.
+ARG LIBQMI_COMMIT=d125e7a51efbc059bc88123547ab24253842e952
+RUN git clone https://gitlab.freedesktop.org/mobile-broadband/libqmi.git /build/libqmi-src && \
+    cd /build/libqmi-src && \
+    git checkout ${LIBQMI_COMMIT}
+
+# Apply CBS patches via git am (preserves authorship and commit messages)
+COPY patches/ /build/patches/
+RUN cd /build/libqmi-src && \
+    git config user.email "build@qmicli-cbs" && \
+    git config user.name "qmicli-cbs build" && \
+    git am /build/patches/*.patch
+
+# Native meson file (for glib build-time tools that run on the build machine)
+RUN cat > /build/native.ini <<'EOF'
+[binaries]
+c = 'gcc'
+pkg-config = 'pkg-config'
+EOF
+
+# Build script that compiles all deps + libqmi for a given cross-compiler target.
+# Usage: /build/build-target.sh <cross_prefix> <sysroot> <output_dir> <cross_file>
+COPY <<'BUILDSCRIPT' /build/build-target.sh
+#!/bin/bash
+set -euo pipefail
+
+CROSS_PREFIX="$1"
+SYSROOT="$2"
+OUTPUT_DIR="$3"
+CROSS_FILE="$4"
+
+# Detect extra CFLAGS from the cross file (e.g., -msoft-float for MIPS)
+EXTRA_CFLAGS=""
+if grep -q "msoft-float" "$CROSS_FILE" 2>/dev/null; then
+    EXTRA_CFLAGS="-msoft-float"
+fi
+
+mkdir -p "${SYSROOT}/lib/pkgconfig" "${SYSROOT}/include"
+
+echo "--- Building zlib for ${CROSS_PREFIX} ---"
+WORK=$(mktemp -d)
+tar xzf /build/zlib.tar.gz -C "$WORK"
+cd "$WORK"/zlib-*
+CC=${CROSS_PREFIX}-gcc AR=${CROSS_PREFIX}-ar RANLIB=${CROSS_PREFIX}-ranlib \
+    CFLAGS="-Os ${EXTRA_CFLAGS}" \
+    ./configure --prefix="${SYSROOT}" --static
+make -j$(nproc)
+make install
+cd /build && rm -rf "$WORK"
+
+echo "--- Building libffi for ${CROSS_PREFIX} ---"
+WORK=$(mktemp -d)
+tar xzf /build/libffi.tar.gz -C "$WORK"
+cd "$WORK"/libffi-*
+./configure --host=${CROSS_PREFIX} --prefix="${SYSROOT}" \
+    --enable-static --disable-shared --disable-docs \
+    CFLAGS="-Os ${EXTRA_CFLAGS}"
+make -j$(nproc)
+make install
+cd /build && rm -rf "$WORK"
+
+echo "--- Building PCRE2 for ${CROSS_PREFIX} ---"
+WORK=$(mktemp -d)
+tar xzf /build/pcre2.tar.gz -C "$WORK"
+cd "$WORK"/pcre2-*
+./configure --host=${CROSS_PREFIX} --prefix="${SYSROOT}" \
+    --enable-static --disable-shared --disable-jit \
+    CFLAGS="-Os ${EXTRA_CFLAGS}"
+make -j$(nproc)
+make install
+cd /build && rm -rf "$WORK"
+
+echo "--- Building GLib for ${CROSS_PREFIX} ---"
+WORK=$(mktemp -d)
+tar xJf /build/glib.tar.xz -C "$WORK"
+cd "$WORK"/glib-*
+meson setup builddir \
+    --cross-file="${CROSS_FILE}" \
+    --native-file=/build/native.ini \
+    --prefix="${SYSROOT}" \
+    --default-library=static \
+    --buildtype=minsize \
+    -Dtests=false \
+    -Dglib_debug=disabled \
+    -Dnls=disabled \
+    -Dlibmount=disabled \
+    -Ddtrace=false \
+    -Dsystemtap=false \
+    -Dselinux=disabled \
+    -Dxattr=false \
+    -Dlibelf=disabled \
+    -Dglib_checks=false \
+    -Dglib_assert=false
+ninja -C builddir -j$(nproc) install
+cd /build && rm -rf "$WORK"
+
+echo "--- Building libqmi for ${CROSS_PREFIX} ---"
+cp -r /build/libqmi-src /build/libqmi-build-$$
+cd /build/libqmi-build-$$
+meson setup builddir \
+    --cross-file="${CROSS_FILE}" \
+    --native-file=/build/native.ini \
+    --prefix="${OUTPUT_DIR}" \
+    --default-library=static \
+    --buildtype=minsize \
+    -Dman=false \
+    -Dgtk_doc=false \
+    -Dintrospection=false \
+    -Dbash_completion=false \
+    -Dudev=false \
+    -Dqrtr=false \
+    -Drmnet=false \
+    -Dmbim_qmux=false \
+    -Dfirmware_update=false \
+    -Dmm_runtime_check=false \
+    -Dcollection=full
+ninja -C builddir -j$(nproc) install
+cd /build && rm -rf /build/libqmi-build-$$
+
+echo "--- Stripping binaries ---"
+${CROSS_PREFIX}-strip "${OUTPUT_DIR}/bin/qmicli"
+if [ -f "${OUTPUT_DIR}/libexec/qmi-proxy" ]; then
+    ${CROSS_PREFIX}-strip "${OUTPUT_DIR}/libexec/qmi-proxy"
+fi
+
+echo "--- Done: ${CROSS_PREFIX} ---"
+file "${OUTPUT_DIR}/bin/qmicli"
+ls -la "${OUTPUT_DIR}/bin/qmicli"
+BUILDSCRIPT
+RUN chmod +x /build/build-target.sh
+
+# ============================================================
+# Target 1: MIPS big-endian soft-float (UniFi LTE Backup Pro)
+# ============================================================
+FROM base AS mips-builder
+
+# Download MIPS cross-compiler
+RUN curl -sSL https://musl.cc/mips-linux-muslsf-cross.tgz | tar xz -C /opt
+ENV PATH="/opt/mips-linux-muslsf-cross/bin:${PATH}"
+
+# Verify toolchain
+RUN mips-linux-muslsf-gcc --version
+
+# Create meson cross file
+RUN cat > /build/cross-mips.ini <<'EOF'
 [binaries]
 c = 'mips-linux-muslsf-gcc'
 cpp = 'mips-linux-muslsf-g++'
@@ -62,7 +198,7 @@ c_args = ['-Os', '-msoft-float']
 c_link_args = ['-static', '-msoft-float']
 
 [properties]
-pkg_config_libdir = ['/build/sysroot/lib/pkgconfig', '/build/sysroot/share/pkgconfig']
+pkg_config_libdir = ['/build/sysroot-mips/lib/pkgconfig', '/build/sysroot-mips/share/pkgconfig']
 growing_stack = false
 have_strlcpy = false
 have_c99_vsnprintf = true
@@ -73,118 +209,56 @@ system = 'linux'
 cpu_family = 'mips'
 cpu = 'mips32r2'
 endian = 'big'
-CROSSEOF
+EOF
 
-# Create sysroot directory
-RUN mkdir -p /build/sysroot/lib/pkgconfig /build/sysroot/include
+RUN /build/build-target.sh mips-linux-muslsf /build/sysroot-mips /build/output-mips /build/cross-mips.ini
 
-# Build zlib (static)
-RUN curl -sSL "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz" | tar xz && \
-    cd zlib-${ZLIB_VERSION} && \
-    CC=${CROSS_PREFIX}-gcc \
-    AR=${CROSS_PREFIX}-ar \
-    RANLIB=${CROSS_PREFIX}-ranlib \
-    CFLAGS="-Os -msoft-float" \
-    ./configure --prefix=/build/sysroot --static && \
-    make -j$(nproc) && \
-    make install && \
-    cd .. && rm -rf zlib-${ZLIB_VERSION}
+# ============================================================
+# Target 2: aarch64 (Raspberry Pi 4/5, Debian Bookworm)
+# ============================================================
+FROM base AS aarch64-builder
 
-# Build libffi (static)
-RUN curl -sSL "https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION}/libffi-${LIBFFI_VERSION}.tar.gz" | tar xz && \
-    cd libffi-${LIBFFI_VERSION} && \
-    ./configure \
-        --host=${CROSS_PREFIX} \
-        --prefix=/build/sysroot \
-        --enable-static --disable-shared \
-        --disable-docs \
-        CFLAGS="-Os -msoft-float" && \
-    make -j$(nproc) && \
-    make install && \
-    cd .. && rm -rf libffi-${LIBFFI_VERSION}
+# Download aarch64 cross-compiler
+RUN curl -sSL https://musl.cc/aarch64-linux-musl-cross.tgz | tar xz -C /opt
+ENV PATH="/opt/aarch64-linux-musl-cross/bin:${PATH}"
 
-# Build PCRE2 (static, required by glib)
-RUN curl -sSL "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-${PCRE2_VERSION}/pcre2-${PCRE2_VERSION}.tar.gz" | tar xz && \
-    cd pcre2-${PCRE2_VERSION} && \
-    ./configure \
-        --host=${CROSS_PREFIX} \
-        --prefix=/build/sysroot \
-        --enable-static --disable-shared \
-        --disable-jit \
-        CFLAGS="-Os -msoft-float" && \
-    make -j$(nproc) && \
-    make install && \
-    cd .. && rm -rf pcre2-${PCRE2_VERSION}
+# Verify toolchain
+RUN aarch64-linux-musl-gcc --version
 
-# Build GLib (static, cross-compiled)
-# GLib uses meson - we need a native file for the build machine too
-RUN cat > /build/native.ini <<'NATIVEEOF'
+# Create meson cross file
+RUN cat > /build/cross-aarch64.ini <<'EOF'
 [binaries]
-c = 'gcc'
+c = 'aarch64-linux-musl-gcc'
+cpp = 'aarch64-linux-musl-g++'
+ar = 'aarch64-linux-musl-ar'
+strip = 'aarch64-linux-musl-strip'
 pkg-config = 'pkg-config'
-NATIVEEOF
 
-RUN curl -sSL "https://download.gnome.org/sources/glib/2.78/glib-${GLIB_VERSION}.tar.xz" | tar xJ && \
-    cd glib-${GLIB_VERSION} && \
-    meson setup builddir \
-        --cross-file=/build/mips-linux-musl.cross \
-        --native-file=/build/native.ini \
-        --prefix=/build/sysroot \
-        --default-library=static \
-        --buildtype=minsize \
-        -Dtests=false \
-        -Dglib_debug=disabled \
-        -Dnls=disabled \
-        -Dlibmount=disabled \
-        -Ddtrace=false \
-        -Dsystemtap=false \
-        -Dselinux=disabled \
-        -Dxattr=false \
-        -Dlibelf=disabled \
-        -Dglib_checks=false \
-        -Dglib_assert=false && \
-    ninja -C builddir -j$(nproc) install && \
-    cd .. && rm -rf glib-${GLIB_VERSION}
+[built-in options]
+c_args = ['-Os']
+c_link_args = ['-static']
 
-# Clone and build libqmi (from main branch with CBS support)
-RUN git clone --depth=1 https://gitlab.freedesktop.org/mobile-broadband/libqmi.git /build/libqmi
+[properties]
+pkg_config_libdir = ['/build/sysroot-aarch64/lib/pkgconfig', '/build/sysroot-aarch64/share/pkgconfig']
+growing_stack = false
+have_strlcpy = false
+have_c99_vsnprintf = true
+va_val_copy = true
 
-# Apply our patched qmicli-wms.c
-COPY qmicli-wms-patched.c /build/libqmi/src/qmicli/qmicli-wms.c
+[host_machine]
+system = 'linux'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'
+EOF
 
-RUN cd /build/libqmi && \
-    meson setup builddir \
-        --cross-file=/build/mips-linux-musl.cross \
-        --native-file=/build/native.ini \
-        --prefix=/build/output \
-        --default-library=static \
-        --buildtype=minsize \
-        -Dman=false \
-        -Dgtk_doc=false \
-        -Dintrospection=false \
-        -Dbash_completion=false \
-        -Dudev=false \
-        -Dqrtr=false \
-        -Drmnet=false \
-        -Dmbim_qmux=false \
-        -Dfirmware_update=false \
-        -Dmm_runtime_check=false \
-        -Dcollection=full && \
-    ninja -C builddir -j$(nproc) install
+RUN /build/build-target.sh aarch64-linux-musl /build/sysroot-aarch64 /build/output-aarch64 /build/cross-aarch64.ini
 
-# Strip the binary for minimal size
-RUN ${CROSS_PREFIX}-strip /build/output/bin/qmicli && \
-    file /build/output/bin/qmicli && \
-    ls -la /build/output/bin/qmicli
-
-# Also build qmi-proxy (needed for shared device access)
-RUN if [ -f /build/output/libexec/qmi-proxy ]; then \
-        ${CROSS_PREFIX}-strip /build/output/libexec/qmi-proxy && \
-        file /build/output/libexec/qmi-proxy && \
-        ls -la /build/output/libexec/qmi-proxy; \
-    fi
-
-# Final stage - just the binaries
+# ============================================================
+# Output stage - just the binaries
+# ============================================================
 FROM scratch AS output
-COPY --from=builder /build/output/bin/qmicli /qmicli
-COPY --from=builder /build/output/libexec/qmi-proxy /qmi-proxy
+COPY --from=mips-builder /build/output-mips/bin/qmicli /mips/qmicli
+COPY --from=mips-builder /build/output-mips/libexec/qmi-proxy /mips/qmi-proxy
+COPY --from=aarch64-builder /build/output-aarch64/bin/qmicli /aarch64/qmicli
+COPY --from=aarch64-builder /build/output-aarch64/libexec/qmi-proxy /aarch64/qmi-proxy

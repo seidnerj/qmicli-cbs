@@ -1,5 +1,5 @@
 From f8226124de392328187d245a1b1fce4597ad926d Mon Sep 17 00:00:00 2001
-From: seidnerj <jonathan.seidner@gmail.com>
+From: seidnerj <4147381+seidnerj@users.noreply.github.com>
 Date: Mon, 9 Mar 2026 06:46:14 +0200
 Subject: [PATCH 3/4] qmicli,wms: add set-broadcast-activation command
 
@@ -8,6 +8,9 @@ reception on the modem via QMI_WMS_SET_BROADCAST_ACTIVATION for
 GSM/WCDMA mode. This complements the existing --wms-set-cbs-channels
 command which configures which channel IDs to receive, but does not
 activate the broadcast subsystem itself.
+
+Based on libqmi commit d125e7a5 from
+https://gitlab.freedesktop.org/mobile-broadband/libqmi
 ---
  src/qmicli/qmicli-wms.c | 59 +++++++++++++++++++++++++++++++++++++++++
  1 file changed, 59 insertions(+)

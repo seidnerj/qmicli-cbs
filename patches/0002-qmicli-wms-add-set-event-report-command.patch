@@ -1,5 +1,5 @@
 From 83cdf8fc76ceb173373b53b9ec347a067569a6a1 Mon Sep 17 00:00:00 2001
-From: seidnerj <jonathan.seidner@gmail.com>
+From: seidnerj <4147381+seidnerj@users.noreply.github.com>
 Date: Mon, 9 Mar 2026 06:45:22 +0200
 Subject: [PATCH 2/4] qmicli,wms: add set-event-report command
 
@@ -7,6 +7,9 @@ Add --wms-set-event-report to enable the New MT Message Indicator via
 QMI_WMS_SET_EVENT_REPORT. This is needed to receive WMS indications
 for incoming messages, including Cell Broadcast (CBS), ETWS and CMAS
 alerts.
+
+Based on libqmi commit d125e7a5 from
+https://gitlab.freedesktop.org/mobile-broadband/libqmi
 ---
  src/qmicli/qmicli-wms.c | 55 +++++++++++++++++++++++++++++++++++++++++
  1 file changed, 55 insertions(+)

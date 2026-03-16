@@ -1,3 +1,4 @@
 output/
+.libqmi-src/
 *.log
 .DS_Store
