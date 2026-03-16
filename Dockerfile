@@ -27,20 +27,21 @@ RUN python3 -m pip install --break-system-packages meson
 
 WORKDIR /build
 
-# Versions
+# Dependency versions (defaults match build.sh; overridden via --build-arg)
 ARG ZLIB_VERSION=1.3.1
-ARG LIBFFI_VERSION=3.4.6
+ARG LIBFFI_VERSION=3.4.7
 ARG PCRE2_VERSION=10.43
-ARG GLIB_VERSION=2.78.6
+ARG GLIB_VERSION=2.82.5
 
 # Linking mode: "static" (default, self-contained binary) or "shared" (smaller, needs system libs)
 ARG LINK_MODE=static
 
 # Download all source tarballs once (shared across targets)
-RUN curl -sSL "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz" -o /build/zlib.tar.gz && \
+RUN GLIB_MAJOR_MINOR=$(echo "${GLIB_VERSION}" | sed 's/\.[^.]*$//') && \
+    curl -sSL "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz" -o /build/zlib.tar.gz && \
     curl -sSL "https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION}/libffi-${LIBFFI_VERSION}.tar.gz" -o /build/libffi.tar.gz && \
     curl -sSL "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-${PCRE2_VERSION}/pcre2-${PCRE2_VERSION}.tar.gz" -o /build/pcre2.tar.gz && \
-    curl -sSL "https://download.gnome.org/sources/glib/2.78/glib-${GLIB_VERSION}.tar.xz" -o /build/glib.tar.xz
+    curl -sSL "https://download.gnome.org/sources/glib/${GLIB_MAJOR_MINOR}/glib-${GLIB_VERSION}.tar.xz" -o /build/glib.tar.xz
 
 # Clone libqmi at the pinned commit our patches are based on
 # Pinned to the commit our patches are based on (qmicli: wds: Allow to get CBS channels)

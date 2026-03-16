@@ -7,6 +7,12 @@ OUTPUT_DIR="${SCRIPT_DIR}/output"
 # Pinned libqmi commit (must match Dockerfile ARG LIBQMI_COMMIT)
 LIBQMI_COMMIT="d125e7a51efbc059bc88123547ab24253842e952"
 
+# Dependency versions (shared across all platforms)
+ZLIB_VERSION="1.3.1"
+LIBFFI_VERSION="3.4.7"
+PCRE2_VERSION="10.43"
+GLIB_VERSION="2.82.5"
+
 # Default: static linking (self-contained binaries, no runtime deps)
 # Use --dynamic for shared linking (smaller binaries, requires matching system libs)
 LINK_MODE="static"
@@ -41,6 +47,10 @@ trap cleanup EXIT
     docker build \
         --platform linux/amd64 \
         --build-arg LINK_MODE="${LINK_MODE}" \
+        --build-arg ZLIB_VERSION="${ZLIB_VERSION}" \
+        --build-arg LIBFFI_VERSION="${LIBFFI_VERSION}" \
+        --build-arg PCRE2_VERSION="${PCRE2_VERSION}" \
+        --build-arg GLIB_VERSION="${GLIB_VERSION}" \
         -t qmicli-cbs-builder \
         -f "${SCRIPT_DIR}/Dockerfile" \
         "${SCRIPT_DIR}"
@@ -74,13 +84,8 @@ if [ "$(uname)" = "Darwin" ] && command -v meson >/dev/null 2>&1 && command -v n
 
         mkdir -p "${SYSROOT}/lib/pkgconfig" "${SYSROOT}/include"
 
-        # Dependency versions
-        # GLib 2.82+ drops the distutils dependency that breaks on Python 3.12+
-        ZLIB_VERSION=1.3.1
-        LIBFFI_VERSION=3.4.7
-        PCRE2_VERSION=10.43
-        GLIB_VERSION=2.82.5
-        GLIB_MAJOR_MINOR=2.82
+        # Extract major.minor from GLIB_VERSION for download URL
+        GLIB_MAJOR_MINOR="${GLIB_VERSION%.*}"
 
         # --- Build zlib ---
         echo "[native] Building zlib..."
