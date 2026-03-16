@@ -1,0 +1,91 @@
+From ffe855ec033676c238a46d1a3bac3c6de00e220e Mon Sep 17 00:00:00 2001
+From: seidnerj <4147381+seidnerj@users.noreply.github.com>
+Date: Mon, 16 Mar 2026 19:10:01 +0200
+Subject: [PATCH] proxy: use path-based socket on non-Linux platforms
+
+Abstract UNIX domain sockets are Linux-specific. On macOS and other
+platforms, fall back to a file-based UNIX socket at /tmp/qmi-proxy.
+
+This allows qmicli and qmi-proxy to work on macOS when communicating
+with a remote QMI device over a socat bridge.
+---
+ src/libqmi-glib/qmi-endpoint-qmux.c | 8 ++++++++
+ src/libqmi-glib/qmi-proxy.c         | 8 ++++++++
+ src/libqmi-glib/qmi-proxy.h         | 8 ++++++++
+ 3 files changed, 24 insertions(+)
+
+diff --git a/src/libqmi-glib/qmi-endpoint-qmux.c b/src/libqmi-glib/qmi-endpoint-qmux.c
+index f9f0147e..ecf7f76f 100644
+--- a/src/libqmi-glib/qmi-endpoint-qmux.c
++++ b/src/libqmi-glib/qmi-endpoint-qmux.c
+@@ -37,6 +37,7 @@
+ #include "qmi-errors.h"
+ #include "qmi-error-types.h"
+ #include "qmi-helpers.h"
++#include "qmi-proxy.h"
+ 
+ G_DEFINE_TYPE (QmiEndpointQmux, qmi_endpoint_qmux, QMI_TYPE_ENDPOINT)
+ 
+@@ -275,10 +276,17 @@ create_iostream_with_socket (GTask *task)
+     g_socket_client_set_protocol (self->priv->socket_client, G_SOCKET_PROTOCOL_DEFAULT);
+ 
+     /* Setup socket address */
++#ifdef __linux__
+     socket_address = g_unix_socket_address_new_with_type (
+                          self->priv->proxy_path,
+                          -1,
+                          G_UNIX_SOCKET_ADDRESS_ABSTRACT);
++#else
++    socket_address = g_unix_socket_address_new_with_type (
++                         QMI_PROXY_SOCKET_PATH_FULL,
++                         -1,
++                         G_UNIX_SOCKET_ADDRESS_PATH);
++#endif
+ 
+     /* Connect to address */
+     self->priv->socket_connection = g_socket_client_connect (
+diff --git a/src/libqmi-glib/qmi-proxy.c b/src/libqmi-glib/qmi-proxy.c
+index 1979302a..9f20ca10 100644
+--- a/src/libqmi-glib/qmi-proxy.c
++++ b/src/libqmi-glib/qmi-proxy.c
+@@ -1099,10 +1099,18 @@ setup_socket_service (QmiProxy *self,
+         return FALSE;
+ 
+     /* Bind to address */
++#ifdef __linux__
+     socket_address = (g_unix_socket_address_new_with_type (
+                           QMI_PROXY_SOCKET_PATH,
+                           -1,
+                           G_UNIX_SOCKET_ADDRESS_ABSTRACT));
++#else
++    g_unlink (QMI_PROXY_SOCKET_PATH_FULL);
++    socket_address = (g_unix_socket_address_new_with_type (
++                          QMI_PROXY_SOCKET_PATH_FULL,
++                          -1,
++                          G_UNIX_SOCKET_ADDRESS_PATH));
++#endif
+     if (!g_socket_bind (socket, socket_address, TRUE, error))
+         return FALSE;
+     g_object_unref (socket_address);
+diff --git a/src/libqmi-glib/qmi-proxy.h b/src/libqmi-glib/qmi-proxy.h
+index c79343aa..0c7ee80e 100644
+--- a/src/libqmi-glib/qmi-proxy.h
++++ b/src/libqmi-glib/qmi-proxy.h
+@@ -62,6 +62,14 @@ typedef struct _QmiProxyPrivate QmiProxyPrivate;
+  */
+ #define QMI_PROXY_SOCKET_PATH "qmi-proxy"
+ 
++/**
++ * QMI_PROXY_SOCKET_PATH_FULL:
++ *
++ * Full filesystem path for the proxy socket on non-Linux platforms.
++ * On Linux, the abstract socket name QMI_PROXY_SOCKET_PATH is used instead.
++ */
++#define QMI_PROXY_SOCKET_PATH_FULL "/tmp/qmi-proxy"
++
+ /**
+  * QMI_PROXY_N_CLIENTS:
+  *
+-- 
+2.53.0
+
