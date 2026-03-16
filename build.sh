@@ -7,9 +7,20 @@ OUTPUT_DIR="${SCRIPT_DIR}/output"
 # Pinned libqmi commit (must match Dockerfile ARG LIBQMI_COMMIT)
 LIBQMI_COMMIT="d125e7a51efbc059bc88123547ab24253842e952"
 
+# Default: static linking (self-contained binaries, no runtime deps)
+# Use --dynamic for shared linking (smaller binaries, requires matching system libs)
+LINK_MODE="static"
+for arg in "$@"; do
+    case "$arg" in
+        --dynamic) LINK_MODE="shared" ;;
+        --static)  LINK_MODE="static" ;;
+        *) echo "Unknown option: $arg (use --static or --dynamic)"; exit 1 ;;
+    esac
+done
+
 mkdir -p "${OUTPUT_DIR}"
 
-echo "=== Building qmicli for all platforms ==="
+echo "=== Building qmicli for all platforms (${LINK_MODE}) ==="
 echo ""
 
 # Track background build PIDs
@@ -26,9 +37,10 @@ trap cleanup EXIT
 
 # --- Docker cross-compilation (MIPS + aarch64 in parallel via BuildKit) ---
 (
-    echo "[docker] Building MIPS + aarch64 via Docker..."
+    echo "[docker] Building MIPS + aarch64 via Docker (${LINK_MODE})..."
     docker build \
         --platform linux/amd64 \
+        --build-arg LINK_MODE="${LINK_MODE}" \
         -t qmicli-cbs-builder \
         -f "${SCRIPT_DIR}/Dockerfile" \
         "${SCRIPT_DIR}"
@@ -42,16 +54,18 @@ trap cleanup EXIT
 
     docker rm "${CONTAINER_ID}" > /dev/null
 
-    echo "[docker] Done: MIPS + aarch64"
+    echo "[docker] Done: MIPS + aarch64 (${LINK_MODE})"
     file "${OUTPUT_DIR}/qmicli-mips" "${OUTPUT_DIR}/qmicli-aarch64"
 ) > "${DOCKER_LOG}" 2>&1 &
 DOCKER_PID=$!
 echo "Started Docker cross-compilation (PID $DOCKER_PID)"
 
 # --- Native macOS build (parallel with Docker) ---
+# macOS native build always uses shared linking (uses homebrew system libs).
+# Static is not practical on macOS without building all deps from source.
 if [ "$(uname)" = "Darwin" ] && command -v meson >/dev/null 2>&1 && pkg-config --exists glib-2.0 2>/dev/null; then
     (
-        echo "[native] Building qmicli natively for macOS..."
+        echo "[native] Building qmicli natively for macOS (shared)..."
 
         NATIVE_BUILD_DIR=$(mktemp -d)
 
@@ -95,7 +109,7 @@ if [ "$(uname)" = "Darwin" ] && command -v meson >/dev/null 2>&1 && pkg-config -
 
         rm -rf "${NATIVE_BUILD_DIR}"
 
-        echo "[native] Done: macOS"
+        echo "[native] Done: macOS (shared)"
         file "${OUTPUT_DIR}/qmicli-darwin"
     ) > "${NATIVE_LOG}" 2>&1 &
     NATIVE_PID=$!
@@ -148,7 +162,7 @@ fi
 rm -f "${DOCKER_LOG}" "${NATIVE_LOG}"
 
 echo ""
-echo "=== All builds complete ==="
+echo "=== All builds complete (${LINK_MODE}) ==="
 echo ""
 ls -la "${OUTPUT_DIR}/"
 echo ""
