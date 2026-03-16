@@ -1,0 +1,45 @@
+From 0a10315708319d996d86a75dda2adb7c3b304140 Mon Sep 17 00:00:00 2001
+From: seidnerj <4147381+seidnerj@users.noreply.github.com>
+Date: Mon, 16 Mar 2026 20:55:12 +0200
+Subject: [PATCH] endpoint-qmux: allow overriding proxy device path via
+ environment
+
+On macOS and other non-Linux systems, SIP prevents creating the dummy
+/dev/cdc-wdm0 device that qmicli uses as both the local file check
+target and the device path sent in the Internal Proxy Open message.
+
+When QMI_PROXY_DEVICE_PATH is set, use it as the device path in the
+proxy open message instead of the local file path. This allows using
+/dev/null locally while telling the remote proxy to open the real
+QMI device:
+
+    QMI_PROXY_DEVICE_PATH=/dev/cdc-wdm0 qmicli -d /dev/null \
+        --device-open-proxy --wms-get-cbs-channels
+---
+ src/libqmi-glib/qmi-endpoint-qmux.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/libqmi-glib/qmi-endpoint-qmux.c b/src/libqmi-glib/qmi-endpoint-qmux.c
+index f9f0147e..b08ac34c 100644
+--- a/src/libqmi-glib/qmi-endpoint-qmux.c
++++ b/src/libqmi-glib/qmi-endpoint-qmux.c
+@@ -158,7 +158,15 @@ setup_proxy (GTask *task)
+ 
+     g_object_get (self, QMI_ENDPOINT_FILE, &file, NULL);
+     input = qmi_message_ctl_internal_proxy_open_input_new ();
+-    qmi_message_ctl_internal_proxy_open_input_set_device_path (input, qmi_file_get_path (file), NULL);
++    {
++        const gchar *override_path;
++
++        override_path = g_getenv ("QMI_PROXY_DEVICE_PATH");
++        if (override_path && override_path[0])
++            qmi_message_ctl_internal_proxy_open_input_set_device_path (input, override_path, NULL);
++        else
++            qmi_message_ctl_internal_proxy_open_input_set_device_path (input, qmi_file_get_path (file), NULL);
++    }
+     qmi_client_ctl_internal_proxy_open (self->priv->client_ctl,
+                                         input,
+                                         5,
+-- 
+2.53.0
+
