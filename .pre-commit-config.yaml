@@ -1,0 +1,39 @@
+# Pre-commit configuration
+# Install with: pre-commit install --hook-type commit-msg --hook-type pre-commit
+# Run manually with: pre-commit run --all-files
+
+repos:
+    - repo: https://github.com/pre-commit/pre-commit-hooks
+      rev: v5.0.0
+      hooks:
+          - id: trailing-whitespace
+            exclude: '\.patch$'
+          - id: end-of-file-fixer
+            exclude: '\.patch$'
+          - id: mixed-line-ending
+            args: ["--fix=lf"]
+            exclude: '\.patch$'
+          - id: check-merge-conflict
+          - id: check-added-large-files
+            args: ["--maxkb=1000"]
+
+    - repo: https://github.com/Yelp/detect-secrets
+      rev: v1.5.0
+      hooks:
+          - id: detect-secrets
+            args: ["--baseline", ".secrets.baseline"]
+            exclude: '\.patch$'
+
+    - repo: local
+      hooks:
+          - id: check-claude-attribution
+            name: check commit message for Claude attribution
+            description: Prevent commits with Claude attribution
+            entry: bash scripts/check-claude-attribution.sh
+            language: system
+            stages: [commit-msg]
+            always_run: true
+            pass_filenames: true
+
+default_stages: [pre-commit]
+fail_fast: false

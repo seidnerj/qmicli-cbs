@@ -1,0 +1,17 @@
+# Normalize all text files to LF line endings
+* text=auto eol=lf
+
+# Explicitly declare text files
+*.sh text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.md text eol=lf
+*.patch text eol=lf
+Dockerfile text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.zip binary
+*.tar.gz binary
+*.bin binary

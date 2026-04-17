@@ -1,4 +1,25 @@
+# Build outputs
 output/
 .libqmi-src/
+
+# Logs
 *.log
+
+# Tool caches
+.ruff_cache/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+
+# Environment
+.env
+.env.local
+.envrc
