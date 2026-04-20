@@ -112,3 +112,9 @@ This project was originally built to enable [red-alert](https://github.com/seidn
 - `build.sh` - Build script (wraps Docker build + binary extraction)
 - `patches/` - git format-patch series against libqmi main
 - `qmicli-wms-patched.c` - Full patched source file for reference
+
+## License
+
+GPL-2.0 © 2025 seidnerj (patches); see [LICENSE](LICENSE) for original libqmi contributors.
+
+This software is provided "as is" without warranty of any kind. See [LICENSE](LICENSE) for full terms.
