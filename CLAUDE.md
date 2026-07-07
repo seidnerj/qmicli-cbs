@@ -29,7 +29,7 @@ The patches have been submitted upstream as [libqmi issue #131](https://gitlab.f
 
 ## Formatting Rules
 
-**Never use em dashes** (the long dash character) anywhere - not in code, commit messages, PR descriptions, comments, console output, user messages, or any other output. Always use regular hyphens/dashes (-) instead.
+**Never use em dashes or en dashes** (the long dash characters) anywhere - not in code, commit messages, PR descriptions, comments, console output, user messages, or any other output. Always use regular hyphens/dashes (-) instead.
 
 ## Test Policy
 
