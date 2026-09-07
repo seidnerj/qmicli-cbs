@@ -58,7 +58,6 @@ static gboolean reset_flag;
 static gboolean noop_flag;
 static gchar *set_broadcast_config_str;
 static gboolean get_broadcast_config_flag;
-static gboolean set_event_report_flag;
 static gboolean monitor_flag;
 static gboolean set_broadcast_activation_flag;
 
@@ -91,12 +90,6 @@ static GOptionEntry entries[] = {
     { "wms-get-cbs-channels", 0, 0, G_OPTION_ARG_NONE, &get_broadcast_config_flag,
       "Get CBS channels",
       NULL,
-    },
-#endif
-#if defined HAVE_QMI_MESSAGE_WMS_SET_EVENT_REPORT
-    { "wms-set-event-report", 0, 0, G_OPTION_ARG_NONE, &set_event_report_flag,
-      "Enable New MT Message event reporting (required before monitoring)",
-      NULL
     },
 #endif
 #if defined HAVE_QMI_INDICATION_WMS_EVENT_REPORT
@@ -153,7 +146,6 @@ qmicli_wms_options_enabled (void)
                  !!set_routes_str +
                  !!set_broadcast_config_str +
                  get_broadcast_config_flag +
-                 set_event_report_flag +
                  monitor_flag +
                  set_broadcast_activation_flag +
                  reset_flag +
@@ -621,39 +613,6 @@ get_broadcast_config_ready (QmiClientWms *client,
 #endif
 
 /******************************************************************************/
-/* Set Event Report */
-
-#if defined HAVE_QMI_MESSAGE_WMS_SET_EVENT_REPORT
-
-static void
-set_event_report_ready (QmiClientWms *client,
-                        GAsyncResult *res)
-{
-    g_autoptr(QmiMessageWmsSetEventReportOutput) output = NULL;
-    g_autoptr(GError) error = NULL;
-
-    output = qmi_client_wms_set_event_report_finish (client, res, &error);
-    if (!output) {
-        g_printerr ("error: operation failed: %s\n", error->message);
-        operation_shutdown (FALSE);
-        return;
-    }
-
-    if (!qmi_message_wms_set_event_report_output_get_result (output, &error)) {
-        g_printerr ("error: couldn't set WMS event report: %s\n", error->message);
-        operation_shutdown (FALSE);
-        return;
-    }
-
-    g_print ("[%s] Successfully enabled WMS event reporting\n",
-             qmi_device_get_path_display (ctx->device));
-
-    operation_shutdown (TRUE);
-}
-
-#endif /* HAVE_QMI_MESSAGE_WMS_SET_EVENT_REPORT */
-
-/******************************************************************************/
 /* Set Broadcast Activation */
 
 #if defined HAVE_QMI_MESSAGE_WMS_SET_BROADCAST_ACTIVATION
@@ -1033,23 +992,6 @@ qmicli_wms_run (QmiDevice *device,
                                              NULL);
         return;
 
-    }
-#endif
-
-#if defined HAVE_QMI_MESSAGE_WMS_SET_EVENT_REPORT
-    if (set_event_report_flag) {
-        g_autoptr(QmiMessageWmsSetEventReportInput) input = NULL;
-
-        g_debug ("Asynchronously enabling WMS event reporting...");
-        input = qmi_message_wms_set_event_report_input_new ();
-        qmi_message_wms_set_event_report_input_set_new_mt_message_indicator (input, TRUE, NULL);
-        qmi_client_wms_set_event_report (ctx->client,
-                                         input,
-                                         10,
-                                         ctx->cancellable,
-                                         (GAsyncReadyCallback)set_event_report_ready,
-                                         NULL);
-        return;
     }
 #endif
 

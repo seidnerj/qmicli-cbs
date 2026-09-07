@@ -1,7 +1,7 @@
-From 70b7a4a687af0451fabef1cb9ab96872854f7b19 Mon Sep 17 00:00:00 2001
+From c5fe8a18d36be6fee0a66b9f7796e9b82f1a74fa Mon Sep 17 00:00:00 2001
 From: seidnerj <4147381+seidnerj@users.noreply.github.com>
 Date: Mon, 9 Mar 2026 06:49:05 +0200
-Subject: [PATCH 4/4] qmicli,wms: add monitor command for CBS/ETWS/CMAS
+Subject: [PATCH 3/3] qmicli,wms: add monitor command for CBS/ETWS/CMAS
  messages
 
 Add --wms-monitor to listen for incoming WMS Event Report indications
@@ -25,12 +25,14 @@ The monitoring pattern follows the same approach used by
 
 Based on libqmi commit d125e7a5 from
 https://gitlab.freedesktop.org/mobile-broadband/libqmi
+
+Signed-off-by: seidnerj <4147381+seidnerj@users.noreply.github.com>
 ---
  src/qmicli/qmicli-wms.c | 218 +++++++++++++++++++++++++++++++++++++++-
  1 file changed, 217 insertions(+), 1 deletion(-)
 
 diff --git a/src/qmicli/qmicli-wms.c b/src/qmicli/qmicli-wms.c
-index e1816e2..b28c502 100644
+index 38195b5b..cbd2b17c 100644
 --- a/src/qmicli/qmicli-wms.c
 +++ b/src/qmicli/qmicli-wms.c
 @@ -42,6 +42,9 @@ typedef struct {
@@ -43,16 +45,16 @@ index e1816e2..b28c502 100644
  } Context;
  static Context *ctx;
  
-@@ -55,6 +58,7 @@ static gchar *set_broadcast_config_str;
+@@ -54,6 +57,7 @@ static gboolean noop_flag;
+ static gchar *set_broadcast_config_str;
  static gboolean get_broadcast_config_flag;
- static gboolean set_event_report_flag;
  static gboolean set_broadcast_activation_flag;
 +static gboolean monitor_flag;
  
  static GOptionEntry entries[] = {
  #if defined HAVE_QMI_MESSAGE_WMS_GET_SUPPORTED_MESSAGES
-@@ -93,6 +97,12 @@ static GOptionEntry entries[] = {
-       NULL
+@@ -86,6 +90,12 @@ static GOptionEntry entries[] = {
+       NULL,
      },
  #endif
 +#if defined HAVE_QMI_INDICATION_WMS_EVENT_REPORT
@@ -64,15 +66,15 @@ index e1816e2..b28c502 100644
  #if defined HAVE_QMI_MESSAGE_WMS_SET_BROADCAST_ACTIVATION
      { "wms-set-broadcast-activation", 0, 0, G_OPTION_ARG_NONE, &set_broadcast_activation_flag,
        "Activate Cell Broadcast message reception on the modem",
-@@ -143,6 +153,7 @@ qmicli_wms_options_enabled (void)
+@@ -135,6 +145,7 @@ qmicli_wms_options_enabled (void)
+                  !!set_broadcast_config_str +
                   get_broadcast_config_flag +
-                  set_event_report_flag +
                   set_broadcast_activation_flag +
 +                 monitor_flag +
                   reset_flag +
                   noop_flag);
  
-@@ -151,6 +162,9 @@ qmicli_wms_options_enabled (void)
+@@ -143,6 +154,9 @@ qmicli_wms_options_enabled (void)
          exit (EXIT_FAILURE);
      }
  
@@ -82,7 +84,7 @@ index e1816e2..b28c502 100644
      checked = TRUE;
      return !!n_actions;
  }
-@@ -161,6 +175,12 @@ context_free (Context *context)
+@@ -153,6 +167,12 @@ context_free (Context *context)
      if (!context)
          return;
  
@@ -95,7 +97,7 @@ index e1816e2..b28c502 100644
      if (context->client)
          g_object_unref (context->client);
      g_object_unref (context->cancellable);
-@@ -658,6 +678,194 @@ set_broadcast_activation_ready (QmiClientWms *client,
+@@ -620,6 +640,194 @@ set_broadcast_activation_ready (QmiClientWms *client,
  
  #endif /* HAVE_QMI_MESSAGE_WMS_SET_BROADCAST_ACTIVATION */
  
@@ -290,7 +292,7 @@ index e1816e2..b28c502 100644
  #if defined HAVE_QMI_MESSAGE_WMS_RESET
  
  static void
-@@ -705,7 +913,7 @@ qmicli_wms_run (QmiDevice *device,
+@@ -667,7 +875,7 @@ qmicli_wms_run (QmiDevice *device,
                  GCancellable *cancellable)
  {
      /* Initialize context */
@@ -299,7 +301,7 @@ index e1816e2..b28c502 100644
      ctx->device = g_object_ref (device);
      ctx->client = g_object_ref (client);
      ctx->cancellable = g_object_ref (cancellable);
-@@ -822,6 +1030,14 @@ qmicli_wms_run (QmiDevice *device,
+@@ -767,6 +975,14 @@ qmicli_wms_run (QmiDevice *device,
      }
  #endif
  
@@ -315,5 +317,5 @@ index e1816e2..b28c502 100644
      if (set_broadcast_activation_flag) {
          g_autoptr(QmiMessageWmsSetBroadcastActivationInput) input = NULL;
 -- 
-2.53.0
+2.55.0
 
