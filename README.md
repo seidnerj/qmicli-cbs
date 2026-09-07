@@ -4,11 +4,10 @@ Cross-compiled `qmicli` with Cell Broadcast (CBS/ETWS/CMAS) monitoring support.
 
 ## What this is
 
-A patched build of [libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi)'s `qmicli` tool that adds three new WMS commands for Cell Broadcast reception:
+A patched build of [libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi)'s `qmicli` tool that adds two new WMS commands for Cell Broadcast reception:
 
-- `--wms-set-event-report` - Enable MT message event reporting
 - `--wms-set-broadcast-activation` - Activate Cell Broadcast reception on the modem
-- `--wms-monitor` - Monitor for incoming CBS/ETWS/CMAS messages in real-time
+- `--wms-monitor` - Monitor for incoming CBS/ETWS/CMAS messages in real-time (enables event reporting internally)
 
 It also improves the existing `--wms-get-cbs-channels` output to show the broadcast activation state.
 
@@ -26,12 +25,11 @@ This project bridges that gap - giving any QMI-capable device the ability to rec
 
 The patches have been submitted upstream to libqmi on [freedesktop.org GitLab (issue #131)](https://gitlab.freedesktop.org/mobile-broadband/libqmi/-/issues/131).
 
-See `patches/` for the 4-commit patch series against libqmi main:
+See `patches/` for the 3-commit patch series against libqmi main:
 
 1. `0001` - Show broadcast activation state in `--wms-get-cbs-channels` output
-2. `0002` - Add `--wms-set-event-report` command
-3. `0003` - Add `--wms-set-broadcast-activation` command
-4. `0004` - Add `--wms-monitor` command with CBS/ETWS/CMAS indication decoding
+2. `0002` - Add `--wms-set-broadcast-activation` command
+3. `0003` - Add `--wms-monitor` command with CBS/ETWS/CMAS indication decoding
 
 ## Current build target
 
@@ -71,9 +69,6 @@ scp output/qmicli user@device:/tmp/
 
 # Activate broadcast reception
 /tmp/qmicli -d /dev/cdc-wdm0 --device-open-proxy --wms-set-broadcast-activation
-
-# Enable event reporting
-/tmp/qmicli -d /dev/cdc-wdm0 --device-open-proxy --wms-set-event-report
 
 # Monitor for incoming Cell Broadcast messages (Ctrl+C to stop)
 /tmp/qmicli -d /dev/cdc-wdm0 --device-open-proxy --wms-monitor

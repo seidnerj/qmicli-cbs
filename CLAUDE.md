@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cross-compiled build of [libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi)'s `qmicli` tool, patched to add Cell Broadcast (CBS/ETWS/CMAS) monitoring commands. The project is a packaging/build harness - it maintains a 4-patch series against libqmi and cross-compiles for embedded targets (currently MIPS 32-bit BE soft-float with musl).
+Cross-compiled build of [libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi)'s `qmicli` tool, patched to add Cell Broadcast (CBS/ETWS/CMAS) monitoring commands. The project is a packaging/build harness - it maintains a patch series against libqmi and cross-compiles for embedded targets (currently MIPS 32-bit BE soft-float with musl).
 
 The patches have been submitted upstream as [libqmi issue #131](https://gitlab.freedesktop.org/mobile-broadband/libqmi/-/issues/131).
 
@@ -74,11 +74,12 @@ qmicli-cbs/
 ├── build.sh                # Host wrapper: builds via Docker, extracts artifacts into output/
 ├── qmicli-wms-patched.c    # Patched qmicli-wms source (applied on top of pinned libqmi)
 ├── compat/endian.h         # Portability shim for non-Linux build hosts
-├── patches/                # 4-commit patch series against libqmi, submitted upstream
+├── patches/                # Patch series against libqmi, submitted upstream
 │   ├── 0001-qmicli-wms-show-broadcast-activation-state-in-get-cb.patch
-│   ├── 0002-qmicli-wms-add-set-event-report-command.patch
-│   ├── 0003-qmicli-wms-add-set-broadcast-activation-command.patch
-│   └── 0004-qmicli-wms-add-monitor-command-for-CBS-ETWS-CMAS-mes.patch
+│   ├── 0002-qmicli-wms-add-set-broadcast-activation-command.patch
+│   ├── 0003-qmicli-wms-add-monitor-command-for-CBS-ETWS-CMAS-mes.patch
+│   ├── 0004-proxy-use-path-based-socket-on-non-Linux-platforms.patch
+│   └── 0005-endpoint-qmux-allow-overriding-proxy-device-path-via.patch
 ├── README.md
 └── LICENSE                 # GPL v2 (inherited from libqmi)
 ```
