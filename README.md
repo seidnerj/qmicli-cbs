@@ -76,6 +76,37 @@ scp output/qmicli user@device:/tmp/
 
 Replace `/dev/cdc-wdm0` with your QMI device path.
 
+## Point-to-point SMS and `--wms-monitor`
+
+`--wms-monitor` was written for Cell Broadcast, but WMS event report indications also carry ordinary point-to-point (MT) SMS. Whether the monitor shows you the message *content* depends on how the modem's WMS routes are configured, and there are two distinct outcomes.
+
+**Transferred to the client.** The indication carries the `Transfer Route MT Message` TLV, and the monitor prints the ack indicator, transaction ID, format and the complete raw PDU as hex. The CBS page-header decode is an additional branch that runs only when the format is `gsm-wcdma-broadcast`, so a point-to-point message still prints its full PDU, with the format shown as point-to-point. The PDU can then be decoded externally.
+
+**Stored on the SIM or in modem memory.** The indication carries only a storage pointer, and the monitor prints:
+
+```
+  MT Message (stored):
+    Storage Type: sim
+    Memory Index: 3
+```
+
+That is the entire output: no sender, no timestamp, no text. Reading the message itself then requires a WMS command such as `--wms-get-message`.
+
+Which of the two you get is determined by the receipt action in the modem's WMS route configuration. Inspect it with `--wms-get-routes` and change it with `--wms-set-routes`.
+
+### Why this matters when a monitor is already running
+
+WMS permits one client at a time. A long-lived `--wms-monitor` holds the WMS service, so a second WMS client (`--wms-get-routes`, `--wms-list-messages`, `--wms-get-message`) cannot be opened without stopping the monitor. If the modem is configured to store rather than transfer, an inbound SMS is therefore visible only as a storage index for as long as the monitor runs, and its content is unreachable over QMI. Where the monitor feeds an alerting pipeline, stopping it to read one message is usually not acceptable.
+
+Two ways around this, neither of which requires stopping the monitor:
+
+- Check the route configuration *before* starting the long-lived monitor, and set the receipt action to transfer if you need message content.
+- Use the modem's AT interface, which on many devices is a separate character device (for example `/dev/ttyUSB2`). It allocates no QMI client and cannot preempt WMS: `AT+CMGF=1` followed by `AT+CMGL="ALL"` lists stored messages with sender and text.
+
+Other QMI services are unaffected by the WMS limit. NAS, DMS and UIM allocate their own clients and coexist with a running monitor through `qmi-proxy`.
+
+A note on how much of this is verified: the stored-versus-transferred distinction is read from the indication handler in `qmicli-wms-patched.c`. Only the broadcast path has been exercised against real hardware here.
+
 ## CBS channel reference
 
 ### International (CMAS/ETWS)
