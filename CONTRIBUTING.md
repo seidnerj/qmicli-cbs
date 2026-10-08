@@ -44,7 +44,6 @@ The following checks run automatically on commit:
 - **check-merge-conflict** - Prevent committing unresolved merge conflicts
 - **check-added-large-files** - Block files over 1 MB
 - **detect-secrets** - Secret detection against baseline
-- **check-claude-attribution** - Prevent Claude attribution in commit messages
 
 Run all hooks manually:
 
