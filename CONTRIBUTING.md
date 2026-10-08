@@ -5,7 +5,7 @@
 ```bash
 git clone https://github.com/seidnerj/qmicli-cbs.git
 cd qmicli-cbs
-pre-commit install --hook-type commit-msg --hook-type pre-commit
+pre-commit install
 ```
 
 Docker is required for building - the entire toolchain runs inside the Docker image, so host setup is minimal.

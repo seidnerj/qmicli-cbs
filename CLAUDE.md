@@ -52,7 +52,7 @@ This project has no automated test suite - the verification path is "build succe
 
 ## Pre-commit Hooks
 
-**ALWAYS verify pre-commit hooks are installed before the first commit in any session.** Run `pre-commit install --hook-type commit-msg --hook-type pre-commit` if hooks are not active.
+**ALWAYS verify pre-commit hooks are installed before the first commit in any session.** Run `pre-commit install` if hooks are not active.
 
 ## Git Guidelines
 

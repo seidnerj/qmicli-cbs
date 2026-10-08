@@ -1,5 +1,5 @@
 # Pre-commit configuration
-# Install with: pre-commit install --hook-type commit-msg --hook-type pre-commit
+# Install with: pre-commit install
 # Run manually with: pre-commit run --all-files
 
 repos:
